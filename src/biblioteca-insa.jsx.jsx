@@ -82,7 +82,7 @@ function UploadModal({ grade, subject, user, onClose, onUpload }) {
     setUploading(true); setError("");
     try {
       const ext = file.name.split(".").pop();
-      const filePath = `${grade.replace(/ /g,"-")}_${subject.replace(/ /g,"-")}_${Date.now()}.${ext}`;
+      const filePath = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from("files").upload(filePath, file);
