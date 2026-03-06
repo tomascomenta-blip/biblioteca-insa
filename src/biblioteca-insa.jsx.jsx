@@ -368,6 +368,336 @@ function UploadModal({ grade, subject, user, onClose, onUpload, onAchievement })
 }
 
 // ============================================================
+// USEFUL LINKS PANEL
+// ============================================================
+function UsefulLinksPanel({ grade, subject, user, darkMode }) {
+  const [links, setLinks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newUrl, setNewUrl] = useState("");
+  const [newDesc, setNewDesc] = useState("");
+  const canAdd = user?.email === ADMIN_EMAIL || true; // maestros y admin pueden añadir
+  const bg = darkMode ? "#0E0E0E" : "#FFF";
+  const border = darkMode ? "#1A1A1A" : "#E5E5E0";
+  const text = darkMode ? "#EEE" : "#111";
+  const muted = darkMode ? "#555" : "#888";
+
+  const getLinkType = (url) => {
+    if (url.includes("youtube.com")||url.includes("youtu.be")) return {icon:"▶️", label:"YouTube"};
+    if (url.includes("drive.google.com")) return {icon:"📁", label:"Google Drive"};
+    if (url.includes("docs.google.com")) return {icon:"📄", label:"Google Docs"};
+    return {icon:"🔗", label:"Enlace"};
+  };
+
+  useEffect(() => {
+    supabase.from("useful_links").select("*")
+      .eq("grade", grade).eq("subject", subject)
+      .order("created_at", {ascending:false})
+      .then(({data}) => { setLinks(data||[]); setLoading(false); });
+  }, [grade, subject]);
+
+  const handleAdd = async () => {
+    if (!newTitle.trim()||!newUrl.trim()) return;
+    const url = newUrl.startsWith("http") ? newUrl : "https://"+newUrl;
+    const {data} = await supabase.from("useful_links").insert({
+      grade, subject, title:newTitle, url,
+      description:newDesc, added_by:user?.email
+    }).select().single();
+    if (data) { setLinks(prev=>[data,...prev]); setNewTitle(""); setNewUrl(""); setNewDesc(""); setAdding(false); }
+  };
+
+  const handleDelete = async (id) => {
+    await supabase.from("useful_links").delete().eq("id", id);
+    setLinks(prev=>prev.filter(l=>l.id!==id));
+  };
+
+  return (
+    <div style={{ background:bg, border:`1px solid ${border}`, borderRadius:"14px",
+      padding:"1.15rem", marginBottom:"1rem" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"0.85rem" }}>
+        <h3 style={{ color:text, fontWeight:700, fontSize:"0.92rem", display:"flex", alignItems:"center", gap:"0.4rem" }}>
+          🔗 Links Útiles
+        </h3>
+        {user && (
+          <button onClick={()=>setAdding(!adding)} style={{
+            background:adding?"transparent":"linear-gradient(135deg,#4F8EF7,#6366F1)",
+            border:`1px solid ${adding?"#4F8EF7":"transparent"}`,
+            color:adding?"#4F8EF7":"#fff", borderRadius:"7px",
+            padding:"0.25rem 0.65rem", fontSize:"0.74rem", fontWeight:600, cursor:"pointer" }}>
+            {adding?"Cancelar":"+ Añadir"}
+          </button>
+        )}
+      </div>
+
+      {adding && (
+        <div style={{ background:darkMode?"#141414":"#F8F8F5", borderRadius:"10px",
+          padding:"0.85rem", marginBottom:"0.85rem", display:"flex", flexDirection:"column", gap:"0.5rem" }}>
+          {[
+            {val:newTitle, set:setNewTitle, ph:"Título (ej: Video explicativo)"},
+            {val:newUrl, set:setNewUrl, ph:"URL (ej: youtube.com/watch?v=...)"},
+            {val:newDesc, set:setNewDesc, ph:"Descripción breve (opcional)"},
+          ].map(({val,set,ph}) => (
+            <input key={ph} value={val} onChange={e=>set(e.target.value)} placeholder={ph}
+              style={{ background:darkMode?"#1A1A1A":"#FFF", border:`1px solid ${border}`,
+                borderRadius:"8px", color:text, padding:"0.45rem 0.7rem", fontSize:"0.82rem", outline:"none" }} />
+          ))}
+          <button onClick={handleAdd} disabled={!newTitle.trim()||!newUrl.trim()}
+            style={{ background:"linear-gradient(135deg,#4F8EF7,#6366F1)", border:"none",
+              color:"#fff", borderRadius:"8px", padding:"0.45rem", fontSize:"0.82rem",
+              fontWeight:600, cursor:"pointer", opacity:(!newTitle.trim()||!newUrl.trim())?0.5:1 }}>
+            Guardar Link
+          </button>
+        </div>
+      )}
+
+      {loading ? <div style={{ color:muted, fontSize:"0.82rem" }}>Cargando...</div>
+      : links.length===0 ? <div style={{ color:muted, fontSize:"0.82rem", textAlign:"center", padding:"0.75rem 0" }}>Sin links aún</div>
+      : links.map(l => {
+        const type = getLinkType(l.url);
+        return (
+          <div key={l.id} style={{ display:"flex", alignItems:"center", gap:"0.65rem",
+            padding:"0.6rem 0", borderBottom:`1px solid ${border}` }}>
+            <span style={{ fontSize:"1.1rem", flexShrink:0 }}>{type.icon}</span>
+            <div style={{ flex:1, minWidth:0 }}>
+              <a href={l.url} target="_blank" rel="noreferrer"
+                style={{ color:"#4F8EF7", fontWeight:600, fontSize:"0.84rem",
+                  textDecoration:"none", overflow:"hidden", textOverflow:"ellipsis",
+                  whiteSpace:"nowrap", display:"block" }}>
+                {l.title}
+              </a>
+              {l.description && <div style={{ color:muted, fontSize:"0.72rem", marginTop:"0.1rem" }}>{l.description}</div>}
+              <div style={{ color:muted, fontSize:"0.68rem" }}>{type.label} · {l.added_by}</div>
+            </div>
+            {user?.email===ADMIN_EMAIL && (
+              <button onClick={()=>handleDelete(l.id)} style={{ background:"none", border:"none",
+                color:"#F87171", cursor:"pointer", fontSize:"0.8rem", flexShrink:0 }}>🗑</button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
+// FORUM
+// ============================================================
+function ForumPanel({ grade, subject, user, darkMode }) {
+  const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showNew, setShowNew] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newContent, setNewContent] = useState("");
+  const [openPost, setOpenPost] = useState(null);
+  const [replies, setReplies] = useState([]);
+  const [replyText, setReplyText] = useState("");
+  const [posting, setPosting] = useState(false);
+  const bg = darkMode ? "#0E0E0E" : "#FFF";
+  const border = darkMode ? "#1A1A1A" : "#E5E5E0";
+  const text = darkMode ? "#EEE" : "#111";
+  const muted = darkMode ? "#555" : "#888";
+
+  useEffect(() => {
+    supabase.from("forum_posts").select("*")
+      .eq("grade", grade).eq("subject", subject)
+      .order("pinned", {ascending:false})
+      .order("created_at", {ascending:false})
+      .then(({data}) => { setPosts(data||[]); setLoading(false); });
+  }, [grade, subject]);
+
+  const openPostView = async (post) => {
+    setOpenPost(post);
+    const {data} = await supabase.from("forum_replies").select("*")
+      .eq("post_id", post.id).order("created_at", {ascending:true});
+    setReplies(data||[]);
+  };
+
+  const handleNewPost = async () => {
+    if (!newTitle.trim()||!newContent.trim()||!user) return;
+    setPosting(true);
+    const {data} = await supabase.from("forum_posts").insert({
+      grade, subject, title:newTitle, content:newContent,
+      user_id:user.id, user_email:user.email,
+      user_name:user.user_metadata?.full_name||user.email
+    }).select().single();
+    if (data) { setPosts(prev=>[data,...prev]); setNewTitle(""); setNewContent(""); setShowNew(false); }
+    setPosting(false);
+  };
+
+  const handleReply = async () => {
+    if (!replyText.trim()||!user||!openPost) return;
+    setPosting(true);
+    const {data} = await supabase.from("forum_replies").insert({
+      post_id:openPost.id, content:replyText,
+      user_id:user.id, user_email:user.email,
+      user_name:user.user_metadata?.full_name||user.email
+    }).select().single();
+    if (data) { setReplies(prev=>[...prev,data]); setReplyText(""); setPosts(prev=>prev.map(p=>p.id===openPost.id?{...p,reply_count:(p.reply_count||0)+1}:p)); }
+    setPosting(false);
+  };
+
+  const handlePin = async (post) => {
+    await supabase.from("forum_posts").update({pinned:!post.pinned}).eq("id",post.id);
+    setPosts(prev=>prev.map(p=>p.id===post.id?{...p,pinned:!p.pinned}:p));
+  };
+
+  const handleResolve = async (post) => {
+    await supabase.from("forum_posts").update({resolved:!post.resolved}).eq("id",post.id);
+    setPosts(prev=>prev.map(p=>p.id===post.id?{...p,resolved:!p.resolved}:p));
+    if (openPost?.id===post.id) setOpenPost({...openPost,resolved:!openPost.resolved});
+  };
+
+  const handleDelete = async (postId) => {
+    await supabase.from("forum_posts").delete().eq("id",postId);
+    setPosts(prev=>prev.filter(p=>p.id!==postId));
+    if (openPost?.id===postId) setOpenPost(null);
+  };
+
+  const handleDeleteReply = async (replyId) => {
+    await supabase.from("forum_replies").delete().eq("id",replyId);
+    setReplies(prev=>prev.filter(r=>r.id!==replyId));
+  };
+
+  // Post detail view
+  if (openPost) return (
+    <div style={{ background:bg, border:`1px solid ${border}`, borderRadius:"14px",
+      overflow:"hidden", marginBottom:"1rem" }}>
+      <div style={{ padding:"1rem 1.15rem", borderBottom:`1px solid ${border}`,
+        display:"flex", alignItems:"center", gap:"0.75rem" }}>
+        <button onClick={()=>setOpenPost(null)} style={{ background:"none", border:"none",
+          color:muted, cursor:"pointer", fontSize:"1.1rem" }}>←</button>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ color:text, fontWeight:700, fontSize:"0.92rem" }}>{openPost.title}</div>
+          <div style={{ color:muted, fontSize:"0.72rem" }}>{openPost.user_name} · {formatDate(openPost.created_at)}</div>
+        </div>
+        <div style={{ display:"flex", gap:"0.35rem" }}>
+          {(openPost.user_id===user?.id||user?.email===ADMIN_EMAIL) && (
+            <button onClick={()=>handleResolve(openPost)} style={{ background:openPost.resolved?"rgba(52,211,153,0.12)":"transparent",
+              border:`1px solid ${openPost.resolved?"#34D399":"#2A2A2A"}`,
+              color:openPost.resolved?"#34D399":muted, borderRadius:"6px",
+              padding:"0.2rem 0.5rem", fontSize:"0.7rem", cursor:"pointer" }}>
+              {openPost.resolved?"✓ Resuelto":"Marcar resuelto"}
+            </button>
+          )}
+          {user?.email===ADMIN_EMAIL && (
+            <button onClick={()=>handleDelete(openPost.id)} style={{ background:"none", border:"none",
+              color:"#F87171", cursor:"pointer", fontSize:"0.85rem" }}>🗑</button>
+          )}
+        </div>
+      </div>
+      <div style={{ padding:"1rem 1.15rem", borderBottom:`1px solid ${border}` }}>
+        <p style={{ color:text, fontSize:"0.88rem", lineHeight:1.6, whiteSpace:"pre-wrap" }}>{openPost.content}</p>
+      </div>
+      <div style={{ maxHeight:"280px", overflowY:"auto" }}>
+        {replies.map(r => (
+          <div key={r.id} style={{ padding:"0.75rem 1.15rem", borderBottom:`1px solid ${border}`,
+            display:"flex", gap:"0.65rem" }}>
+            <div style={{ width:"28px", height:"28px", borderRadius:"50%", flexShrink:0,
+              background:"linear-gradient(135deg,#4F8EF720,#6366F120)",
+              display:"flex", alignItems:"center", justifyContent:"center",
+              color:"#4F8EF7", fontWeight:700, fontSize:"0.72rem" }}>
+              {(r.user_name||"?")[0].toUpperCase()}
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ color:text, fontWeight:600, fontSize:"0.78rem", marginBottom:"0.2rem" }}>{r.user_name}</div>
+              <p style={{ color:text, fontSize:"0.83rem", lineHeight:1.5, whiteSpace:"pre-wrap" }}>{r.content}</p>
+              <div style={{ color:muted, fontSize:"0.68rem", marginTop:"0.2rem" }}>{formatDate(r.created_at)}</div>
+            </div>
+            {(r.user_id===user?.id||user?.email===ADMIN_EMAIL) && (
+              <button onClick={()=>handleDeleteReply(r.id)} style={{ background:"none", border:"none",
+                color:"#F87171", cursor:"pointer", fontSize:"0.78rem", flexShrink:0 }}>🗑</button>
+            )}
+          </div>
+        ))}
+        {replies.length===0 && <div style={{ padding:"1rem 1.15rem", color:muted, fontSize:"0.82rem" }}>Sin respuestas aún</div>}
+      </div>
+      {user && (
+        <div style={{ padding:"0.85rem 1.15rem", borderTop:`1px solid ${border}`,
+          display:"flex", gap:"0.5rem" }}>
+          <input value={replyText} onChange={e=>setReplyText(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&handleReply()}
+            placeholder="Escribe una respuesta..."
+            style={{ flex:1, background:darkMode?"#1A1A1A":"#F5F5F0", border:`1px solid ${border}`,
+              borderRadius:"8px", color:text, padding:"0.5rem 0.75rem", fontSize:"0.83rem", outline:"none" }} />
+          <button onClick={handleReply} disabled={!replyText.trim()||posting}
+            style={{ background:"linear-gradient(135deg,#4F8EF7,#6366F1)", border:"none",
+              color:"#fff", borderRadius:"8px", padding:"0.5rem 0.9rem",
+              fontSize:"0.82rem", fontWeight:700, cursor:"pointer",
+              opacity:(!replyText.trim()||posting)?0.5:1 }}>→</button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{ background:bg, border:`1px solid ${border}`, borderRadius:"14px",
+      overflow:"hidden", marginBottom:"1rem" }}>
+      <div style={{ padding:"1rem 1.15rem", borderBottom:`1px solid ${border}`,
+        display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <h3 style={{ color:text, fontWeight:700, fontSize:"0.92rem" }}>💬 Foro de {subject}</h3>
+        {user && (
+          <button onClick={()=>setShowNew(!showNew)} style={{
+            background:showNew?"transparent":"linear-gradient(135deg,#4F8EF7,#6366F1)",
+            border:`1px solid ${showNew?"#4F8EF7":"transparent"}`,
+            color:showNew?"#4F8EF7":"#fff", borderRadius:"7px",
+            padding:"0.25rem 0.65rem", fontSize:"0.74rem", fontWeight:600, cursor:"pointer" }}>
+            {showNew?"Cancelar":"+ Nueva Pregunta"}
+          </button>
+        )}
+      </div>
+
+      {showNew && (
+        <div style={{ padding:"0.85rem 1.15rem", borderBottom:`1px solid ${border}`,
+          background:darkMode?"#141414":"#F8F8F5", display:"flex", flexDirection:"column", gap:"0.5rem" }}>
+          <input value={newTitle} onChange={e=>setNewTitle(e.target.value)} placeholder="Título de tu pregunta..."
+            style={{ background:darkMode?"#1A1A1A":"#FFF", border:`1px solid ${border}`,
+              borderRadius:"8px", color:text, padding:"0.5rem 0.75rem", fontSize:"0.85rem", outline:"none" }} />
+          <textarea value={newContent} onChange={e=>setNewContent(e.target.value)}
+            placeholder="Describe tu pregunta con más detalle..." rows={3}
+            style={{ background:darkMode?"#1A1A1A":"#FFF", border:`1px solid ${border}`,
+              borderRadius:"8px", color:text, padding:"0.5rem 0.75rem", fontSize:"0.83rem",
+              outline:"none", resize:"vertical", fontFamily:"inherit" }} />
+          <button onClick={handleNewPost} disabled={!newTitle.trim()||!newContent.trim()||posting}
+            style={{ background:"linear-gradient(135deg,#4F8EF7,#6366F1)", border:"none",
+              color:"#fff", borderRadius:"8px", padding:"0.5rem", fontSize:"0.83rem",
+              fontWeight:700, cursor:"pointer", opacity:(!newTitle.trim()||!newContent.trim())?0.5:1 }}>
+            Publicar Pregunta
+          </button>
+        </div>
+      )}
+
+      {loading ? <div style={{ padding:"1.5rem", color:muted, textAlign:"center", fontSize:"0.82rem" }}>Cargando...</div>
+      : posts.length===0 ? <div style={{ padding:"1.5rem", color:muted, textAlign:"center", fontSize:"0.82rem" }}>Sin preguntas aún. ¡Sé el primero!</div>
+      : posts.map(p => (
+        <div key={p.id} onClick={()=>openPostView(p)}
+          style={{ padding:"0.85rem 1.15rem", borderBottom:`1px solid ${border}`,
+            cursor:"pointer", transition:"background 0.15s" }}
+          onMouseEnter={e=>e.currentTarget.style.background=darkMode?"#141414":"#F8F8F5"}
+          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+          <div style={{ display:"flex", alignItems:"flex-start", gap:"0.5rem" }}>
+            {p.pinned && <span style={{ fontSize:"0.75rem", color:"#FBBF24", flexShrink:0, marginTop:"0.1rem" }}>📌</span>}
+            {p.resolved && <span style={{ fontSize:"0.75rem", color:"#34D399", flexShrink:0, marginTop:"0.1rem" }}>✓</span>}
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ color:text, fontWeight:600, fontSize:"0.88rem",
+                overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.title}</div>
+              <div style={{ color:muted, fontSize:"0.72rem", marginTop:"0.15rem" }}>
+                {p.user_name} · {formatDate(p.created_at)} · {p.reply_count||0} resp.
+              </div>
+            </div>
+            {user?.email===ADMIN_EMAIL && (
+              <button onClick={e=>{e.stopPropagation();handlePin(p);}}
+                style={{ background:"none", border:"none", color:p.pinned?"#FBBF24":muted,
+                  cursor:"pointer", fontSize:"0.8rem", flexShrink:0 }}>📌</button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
 // STAR RATING
 // ============================================================
 function StarRating({ value, onChange, size="1.2rem", readonly=false }) {
@@ -562,7 +892,7 @@ function PreviewModal({ file, onClose }) {
 // ============================================================
 // FILE CARD
 // ============================================================
-function FileCard({ file, color, currentUser, onDelete, onComment, onDownload, onView, darkMode, allUserRoles }) {
+function FileCard({ file, color, currentUser, onDelete, onComment, onDownload, onView, onPin, darkMode, allUserRoles }) {
   const isOwner = currentUser && file.user_id === currentUser.id;
   const [deleting, setDeleting] = useState(false);
   const [liked, setLiked] = useState(false);
@@ -639,6 +969,7 @@ function FileCard({ file, color, currentUser, onDelete, onComment, onDownload, o
             cursor:canPreview?"pointer":"default" }}
             onClick={canPreview?()=>{setShowPreview(true);onView&&onView(file);}:undefined}>
             {file.name}
+            {file.pinned && <span style={{ color:"#FBBF24", fontSize:"0.7rem", marginLeft:"0.35rem" }}>📌</span>}
             {canPreview && <span style={{ color:mutedColor, fontSize:"0.7rem", marginLeft:"0.4rem" }}>👁</span>}
           </div>
           {/* Star rating display */}
@@ -719,6 +1050,18 @@ function FileCard({ file, color, currentUser, onDelete, onComment, onDownload, o
               {deleting?"...":"🗑"}
             </button>
           )}
+          {currentUser?.email===ADMIN_EMAIL && (
+            <button onClick={async()=>{
+              await supabase.from("files").update({pinned:!file.pinned}).eq("id",file.id);
+              onPin && onPin(file.id, !file.pinned);
+            }} title={file.pinned?"Desfijar":"Fijar arriba"}
+              style={{ background:file.pinned?"rgba(251,191,36,0.12)":"transparent",
+                border:`1px solid ${file.pinned?"#FBBF2466":"#2A2A2A"}`,
+                color:file.pinned?"#FBBF24":mutedColor,
+                borderRadius:"8px", padding:"0.4rem 0.5rem", fontSize:"0.76rem", cursor:"pointer" }}>
+              📌
+            </button>
+          )}
         </div>
       </div>
     </>
@@ -765,10 +1108,6 @@ export default function BibliotecaINSA() {
   const [roleUsers, setRoleUsers] = useState([]);
   const [userAchievements, setUserAchievements] = useState([]);
   const [homeTab, setHomeTab] = useState("grados");
-  const [showAI, setShowAI] = useState(false);
-  const [aiMessages, setAiMessages] = useState([]);
-  const [aiInput, setAiInput] = useState("");
-  const [aiLoading, setAiLoading] = useState(false);
 
   const bg = darkMode ? "#080808" : "#F5F5F0";
   const card = darkMode ? "#0E0E0E" : "#FFFFFF";
@@ -898,36 +1237,6 @@ export default function BibliotecaINSA() {
     if (count >= 10) grantAchievement("diez_archivos");
   };
 
-  // AI assistant handler
-  const sendAI = async () => {
-    if (!aiInput.trim() || aiLoading) return;
-    const userMsg = { role:"user", content:aiInput };
-    setAiMessages(prev=>[...prev, userMsg]);
-    setAiInput("");
-    setAiLoading(true);
-    try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514",
-          max_tokens:1000,
-          system:`Eres un asistente de estudio para estudiantes del colegio INSA (Instituto Nuestra Señora de la Asunción) en Colombia. 
-Ayudas con preguntas sobre materias como Matemáticas, Ciencias, Español, Inglés, Historia, Filosofía, etc.
-Responde en español, de forma clara, concisa y amigable para estudiantes de bachillerato (grados 6-11).
-No respondas temas inapropiados. Motiva el estudio y el aprendizaje.`,
-          messages:[...aiMessages, userMsg].slice(-10)
-        })
-      });
-      const data = await res.json();
-      const reply = data.content?.[0]?.text || "No pude responder en este momento.";
-      setAiMessages(prev=>[...prev, { role:"assistant", content:reply }]);
-    } catch {
-      setAiMessages(prev=>[...prev, { role:"assistant", content:"Error de conexión. Intenta de nuevo." }]);
-    }
-    setAiLoading(false);
-  };
-
   const setUserRoleAdmin = async (targetUserId, newRole) => {
     const {data} = await supabase.from("user_roles").update({
       role: newRole, manually_set: true, updated_at: new Date().toISOString()
@@ -1025,8 +1334,12 @@ No respondas temas inapropiados. Motiva el estudio y el aprendizaje.`,
       const effectiveRole = role?.role || (f.user_email ? getRoleFromCount(0) : "lector");
       return effectiveRole === roleFilter;
     })
-    .sort((a,b)=>sort==="date"?new Date(b.uploaded_at)-new Date(a.uploaded_at):
-      sort==="downloads"?b.download_count-a.download_count:a.name?.localeCompare(b.name));
+    .sort((a,b)=>{
+      if (b.pinned && !a.pinned) return 1;
+      if (a.pinned && !b.pinned) return -1;
+      return sort==="date"?new Date(b.uploaded_at)-new Date(a.uploaded_at):
+        sort==="downloads"?b.download_count-a.download_count:a.name?.localeCompare(b.name);
+    });
 
 
   const goHome = () => { setScreen("home"); setSelectedGrade(null); setSelectedSubject(null); };
@@ -1129,12 +1442,6 @@ No respondas temas inapropiados. Motiva el estudio y el aprendizaje.`,
           <button onClick={()=>setDarkMode(!darkMode)} style={{ background:subtle, border:`1px solid ${border}`,
             color:muted, borderRadius:"8px", padding:"0.35rem 0.6rem", fontSize:"0.88rem", cursor:"pointer" }}>
             {darkMode?"☀️":"🌙"}
-          </button>
-          {/* AI button */}
-          <button onClick={()=>setShowAI(true)} style={{ background:"linear-gradient(135deg,#34D39915,#05966915)",
-            border:"1px solid #34D39940", color:"#34D399",
-            borderRadius:"8px", padding:"0.35rem 0.6rem", fontSize:"0.82rem", fontWeight:600, cursor:"pointer" }}>
-            🤖
           </button>
           {user ? (
             <>
@@ -1356,22 +1663,14 @@ No respondas temas inapropiados. Motiva el estudio y el aprendizaje.`,
                         </div>
                       ))}
                     </div>
-                    {/* Role & search shortcuts */}
+                    {/* Quick shortcuts */}
                     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"0.75rem", marginTop:"1rem" }}>
                       <div onClick={()=>setShowGlobalSearch(true)} style={{ background:`linear-gradient(135deg,#4F8EF710,#6366F110)`,
-                        border:"1px solid #4F8EF730", borderRadius:"12px", padding:"1rem",
-                        cursor:"pointer" }}
+                        border:"1px solid #4F8EF730", borderRadius:"12px", padding:"1rem", cursor:"pointer" }}
                         onMouseEnter={e=>e.currentTarget.style.borderColor="#4F8EF766"}
                         onMouseLeave={e=>e.currentTarget.style.borderColor="#4F8EF730"}>
                         <div style={{ fontSize:"1.2rem", marginBottom:"0.3rem" }}>🔍</div>
                         <div style={{ color:text, fontWeight:600, fontSize:"0.82rem" }}>Búsqueda Global</div>
-                      </div>
-                      <div onClick={()=>setShowAI(true)} style={{ background:"linear-gradient(135deg,#34D39910,#059669 10)",
-                        border:"1px solid #34D39930", borderRadius:"12px", padding:"1rem", cursor:"pointer" }}
-                        onMouseEnter={e=>e.currentTarget.style.borderColor="#34D39966"}
-                        onMouseLeave={e=>e.currentTarget.style.borderColor="#34D39930"}>
-                        <div style={{ fontSize:"1.2rem", marginBottom:"0.3rem" }}>🤖</div>
-                        <div style={{ color:text, fontWeight:600, fontSize:"0.82rem" }}>Asistente IA</div>
                       </div>
                     </div>
                   </div>
@@ -1647,6 +1946,10 @@ No respondas temas inapropiados. Motiva el estudio y el aprendizaje.`,
             ))}
           </div>
 
+          {/* Links útiles + Foro */}
+          <UsefulLinksPanel grade={selectedGrade} subject={selectedSubject} user={user} darkMode={darkMode} />
+          <ForumPanel grade={selectedGrade} subject={selectedSubject} user={user} darkMode={darkMode} />
+
           {newFileFlash && (
             <div style={{ background:"rgba(52,211,153,0.08)", border:"1px solid rgba(52,211,153,0.2)",
               borderRadius:"9px", padding:"0.65rem 1rem", marginBottom:"1rem",
@@ -1672,6 +1975,7 @@ No respondas temas inapropiados. Motiva el estudio y el aprendizaje.`,
                   onComment={f=>setCommentFile(f)}
                   onDownload={id=>setFiles(prev=>prev.map(f=>f.id===id?{...f,download_count:(f.download_count||0)+1}:f))}
                   onView={addToHistory}
+                  onPin={(id,val)=>setFiles(prev=>prev.map(f=>f.id===id?{...f,pinned:val}:f))}
                   darkMode={darkMode}
                   allUserRoles={allUserRoles} />
               ))}
@@ -1743,86 +2047,6 @@ No respondas temas inapropiados. Motiva el estudio y el aprendizaje.`,
                   <span style={{ color:muted, fontSize:"0.72rem" }}>⬇ {f.download_count||0}</span>
                 </div>
               ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* AI ASSISTANT */}
-      {showAI && (
-        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", backdropFilter:"blur(12px)",
-          zIndex:1000, display:"flex", alignItems:"flex-end", justifyContent:"flex-end", padding:"1rem" }}>
-          <div style={{ background:darkMode?"#111":"#FFF", border:`1px solid ${border}`, borderRadius:"20px",
-            width:"100%", maxWidth:"420px", height:"70vh", display:"flex", flexDirection:"column",
-            boxShadow:"0 20px 60px rgba(0,0,0,0.5)" }}>
-            {/* Header */}
-            <div style={{ padding:"1rem 1.25rem", borderBottom:`1px solid ${border}`,
-              display:"flex", alignItems:"center", gap:"0.75rem" }}>
-              <div style={{ width:"36px", height:"36px", borderRadius:"10px",
-                background:"linear-gradient(135deg,#34D399,#059669)",
-                display:"flex", alignItems:"center", justifyContent:"center", fontSize:"1.1rem" }}>
-                🤖
-              </div>
-              <div style={{ flex:1 }}>
-                <div style={{ color:text, fontWeight:700, fontSize:"0.92rem" }}>Asistente INSA</div>
-                <div style={{ color:"#34D399", fontSize:"0.72rem" }}>● En línea</div>
-              </div>
-              <button onClick={()=>setShowAI(false)} style={{ background:"none", border:"none", color:muted, fontSize:"1.4rem", cursor:"pointer" }}>×</button>
-            </div>
-            {/* Messages */}
-            <div style={{ flex:1, overflowY:"auto", padding:"1rem", display:"flex", flexDirection:"column", gap:"0.75rem" }}>
-              {aiMessages.length === 0 && (
-                <div style={{ textAlign:"center", padding:"2rem 1rem" }}>
-                  <div style={{ fontSize:"2rem", marginBottom:"0.5rem" }}>👋</div>
-                  <div style={{ color:text, fontWeight:600, fontSize:"0.9rem", marginBottom:"0.35rem" }}>¡Hola! Soy tu asistente de estudio</div>
-                  <div style={{ color:muted, fontSize:"0.8rem", lineHeight:1.5 }}>Pregúntame sobre cualquier materia: matemáticas, ciencias, historia, inglés...</div>
-                  <div style={{ display:"flex", flexWrap:"wrap", gap:"0.4rem", justifyContent:"center", marginTop:"1rem" }}>
-                    {["¿Cómo resuelvo ecuaciones?","Explícame la célula","¿Qué es el renacimiento?"].map(s=>(
-                      <button key={s} onClick={()=>{setAiInput(s);}} style={{
-                        background:darkMode?"#1A1A1A":"#F0F0F0", border:`1px solid ${border}`,
-                        color:muted, borderRadius:"20px", padding:"0.3rem 0.75rem",
-                        fontSize:"0.72rem", cursor:"pointer" }}>{s}</button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {aiMessages.map((m,i) => (
-                <div key={i} style={{ display:"flex", justifyContent:m.role==="user"?"flex-end":"flex-start" }}>
-                  <div style={{ maxWidth:"80%", background:m.role==="user"
-                    ?"linear-gradient(135deg,#4F8EF7,#6366F1)"
-                    :darkMode?"#1A1A1A":"#F0F0F0",
-                    color:m.role==="user"?"#fff":text,
-                    borderRadius:m.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",
-                    padding:"0.65rem 0.9rem", fontSize:"0.85rem", lineHeight:1.5 }}>
-                    {m.content}
-                  </div>
-                </div>
-              ))}
-              {aiLoading && (
-                <div style={{ display:"flex", justifyContent:"flex-start" }}>
-                  <div style={{ background:darkMode?"#1A1A1A":"#F0F0F0", borderRadius:"14px 14px 14px 4px",
-                    padding:"0.65rem 0.9rem", color:muted, fontSize:"0.85rem" }}>
-                    Pensando...
-                  </div>
-                </div>
-              )}
-            </div>
-            {/* Input */}
-            <div style={{ padding:"0.75rem 1rem", borderTop:`1px solid ${border}`,
-              display:"flex", gap:"0.5rem" }}>
-              <input value={aiInput} onChange={e=>setAiInput(e.target.value)}
-                onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&sendAI()}
-                placeholder="Pregunta algo sobre tus materias..."
-                style={{ flex:1, background:darkMode?"#1A1A1A":"#F5F5F0", border:`1px solid ${border}`,
-                  borderRadius:"10px", color:text, padding:"0.55rem 0.85rem",
-                  fontSize:"0.85rem", outline:"none" }} />
-              <button onClick={sendAI} disabled={!aiInput.trim()||aiLoading}
-                style={{ background:"linear-gradient(135deg,#34D399,#059669)", border:"none",
-                  color:"#fff", borderRadius:"10px", padding:"0.55rem 1rem",
-                  fontSize:"0.85rem", fontWeight:700, cursor:"pointer",
-                  opacity:(!aiInput.trim()||aiLoading)?0.5:1 }}>
-                →
-              </button>
             </div>
           </div>
         </div>
